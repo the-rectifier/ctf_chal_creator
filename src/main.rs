@@ -1,207 +1,206 @@
-extern crate clap;
-use clap::{ App, Arg };
+use anyhow::{ Context, Result };
+use log::{ error, info };
+use std::fs::{ self, File, OpenOptions };
+use simplelog::{ ColorChoice, TermLogger, TerminalMode };
+use std::io::{ self, Write };
+use std::path::{ PathBuf };
+use structopt::StructOpt;
+use clap::arg_enum;
 
-use std::fs;
-use std::env;
-use std::fs::File;
-use curl::easy::Easy;
-use colored::Colorize;
-use std::fs::OpenOptions;
-use std::io::{ ErrorKind, Write };
 
+arg_enum! {
+    #[derive(Debug, PartialEq, Eq)]
+    enum ChalType { 
+        Pwn,
+        Reverse,
+        Crypto,
+        Web,
+        Misc,
+        Forensics,
+        Stego,
+    }
+}
+
+#[derive(Debug)]
 struct ChalConfig {
     name: String,
     author: String,
-    chal_type: String,
+    directory: String,
+    chal_type: ChalType,
     docker: bool,
     verbose: bool,
 }
 
-fn main() {
-    let matches = App::new("Chal Creator")
-                        .version("1.0")
-                        .author("canopus")
-                        .about("I antena Espase i Antena")
-                        .arg(Arg::with_name("name")
-                            .short("n")
-                            .long("name")
-                            .value_name("NAME")
-                            .takes_value(true)
-                            .empty_values(false)
-                            .required(true))
-                        .arg(Arg::with_name("author")
-                            .short("a")
-                            .long("author")
-                            .value_name("AUTHOR")
-                            .empty_values(false)
-                            .takes_value(true)
-                            .required(true))
-                        .arg(Arg::with_name("chal_type")
-                            .short("t")
-                            .long("type")
-                            .value_name("TYPE")
-                            .required(true)
-                            .possible_values(&["Crypto", "Pwn", "Reversing", "Web", "Misc", "Forensics", "Stego"])
-                            .takes_value(true)
-                            .empty_values(false))
-                        .arg(Arg::with_name("docker")
-                            .short("d")
-                            .long("docker")
-                            .required(false)
-                            .takes_value(false))
-                        .arg(Arg::with_name("verbose")
-                            .short("v")
-                            .long("verbose")
-                            .required(false)
-                            .takes_value(false))
-                        .get_matches();
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "Ctf Chal Creator",
+    author = "canopus",
+    about = "I antena espase i antena"
+)]
+struct Opts {
+    #[structopt(long, short)]
+    name: String,
 
-    let chal = ChalConfig {
-        name: String::from(matches.value_of("name").unwrap()),
-        author: String::from(matches.value_of("author").unwrap()),
-        chal_type: String::from(matches.value_of("chal_type").unwrap()),
-        docker: matches.is_present("docker"),
-        verbose: matches.is_present("verbose"),
-    };
+    #[structopt(long, short)]
+    author: String,
     
+    #[structopt(long, short = "t", possible_values = &ChalType::variants(), case_insensitive = true)]
+    chal_type: ChalType,
 
-    create_outer(&chal);
-    create_inner(&chal);
-    
+    #[structopt(long, short)]
+    docker: bool,
+
+    #[structopt(long, short)]
+    verbose: bool,
+
+    #[structopt(long, short = "p")]
+    dir: String,
 
 }
 
-fn create_inner(chal: &ChalConfig) {
-    // println!("{}", env::current_dir().unwrap().display());
-    env::set_current_dir("Setup").unwrap();
+
+fn main() -> Result<()> {
+    let opts = Opts::from_args();
+
+    let chal = ChalConfig {
+        name: opts.name,
+        author: opts.author,
+        chal_type: opts.chal_type,
+        docker: opts.docker,
+        verbose: opts.verbose,
+        directory: opts.dir,
+    };
+
+    let log_level = match chal.verbose { 
+        true => log::LevelFilter::Info,
+        false => log::LevelFilter::Warn,
+    };
+
+    TermLogger::init(
+        log_level,
+        simplelog::Config::default(),
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    ).expect("Failed to init logger");
+
+    if let Err(e) = run(&chal) {
+        error!("{:?}", e);
+        std::process::exit(-1);
+    }
+    
+
+    Ok(())
+}
+
+
+fn run(chal: &ChalConfig) -> Result<()> {
+    create_outer(chal)?;
+    create_inner(chal)?;
+
+    Ok(())
+}
+
+fn create_inner(chal: &ChalConfig) -> Result<()> {
     let inner_files: [&str; 2] = ["Dockerfile", "flag"];
 
     for (i, file) in inner_files.iter().enumerate() {
         if i < 1 && !chal.docker {
-            continue
+            continue;
         }
-        match File::create(file) {
-            Ok(_) => {
-                if chal.verbose {
-                    print_info(format!("Created file: {} in Setup/ ", file));
-                }
-            }
-            Err(e) => match e.kind() {
-                ErrorKind::NotFound => perror_exit("Path not found!"),
-                ErrorKind::PermissionDenied => perror_exit("Permission Denied!"),
-                ErrorKind::AlreadyExists => perror_exit("File already Exists!"),
-                _ => panic!("Error creating file! {}", e),
-            }
-        }
+
+        let path = PathBuf::from(format!("{}/{}/Setup", chal.directory, chal.name)).join(file);
+        File::create(&path)
+            .with_context(|| format!("Failed to Create '{}'", path.display()))?;
+
+        info!("Created '{}'", path.display());
     }   
 
-    if chal.chal_type == "Pwn" {
-        env::set_current_dir("../Solution").unwrap();
-        let mut f = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open("solution.py")
-                    .unwrap();
-        
-        let mut sol = Easy::new();
-        sol.url("https://gist.githubusercontent.com/the-rectifier/9af60d9d85e2600708e582505060258b/raw/8faedc9c67728afa853386aa41a7df873863e0b7/solution.py").unwrap();
-        sol.write_function(move |data| {
-            f.write_all(data).unwrap();
-            Ok(data.len())
-        }).unwrap();
-        sol.perform().unwrap();
+    if chal.chal_type == ChalType::Pwn {
+        let http_req = ureq::get("https://gist.githubusercontent.com/the-rectifier/9af60d9d85e2600708e582505060258b/raw/8faedc9c67728afa853386aa41a7df873863e0b7/solution.py")
+                            .call()
+                            .context("Failed to fetch solution template")?;
 
-        if chal.verbose {
-            print_info("Downloaded solve template!".to_string());
-        }
+        let path = PathBuf::from(format!("{}/{}/Solution", chal.directory, chal.name)).join("solution.py");
+
+        let mut f = File::create(path)
+                        .with_context(|| format!("Failed to create 'Solution/solution.py'"))?;
+
+        io::copy(&mut http_req.into_reader(), &mut f)
+            .with_context(|| format!("Failed to write Solution/solution.py"))?;
+        
+        info!("Downloaded Solve template!");
     }
+
+    Ok(())
 }
 
-fn create_outer(chal: &ChalConfig) {
+fn create_outer(chal: &ChalConfig) -> Result<()> {
     let dirs: [&str; 3] = ["Setup", "Public", "Solution"];
     let outside_files: [&str; 3] = ["docker_build.sh", "docker_run.sh", "Readme"];
+    let chal_dir = PathBuf::from(format!("{}/{}", chal.directory, chal.name));
 
-    match fs::create_dir(&chal.name) { 
-        Ok(_) => { 
-            if chal.verbose {
-                print_info(format!("Challenge Directory {} created successfully!", chal.name));
-            }
-        }
-        Err(e) => match e.kind() { 
-            ErrorKind::PermissionDenied => perror_exit("Permission Denied!"),
-            ErrorKind::AlreadyExists => perror_exit("Directory already exists!"),
-            _ => panic!("Error Creating Directory! {}", e),
-        }
-    }    
+    fs::create_dir(&chal_dir)
+        .with_context(|| format!("Failed to create '{}/' ", chal_dir.display()))?;
 
-    env::set_current_dir(&chal.name).unwrap();
+    info!("Directory '{}/' created successfully!", chal_dir.display());
 
-    for dir in dirs.iter() { 
-        match fs::create_dir(dir) { 
-            Ok(_) => {
-                if chal.verbose {
-                    print_info(format!("Subdirectory {} created successfully!", dir));
-                }
-            }
-            Err(e) => match e.kind() { 
-                ErrorKind::PermissionDenied => perror_exit("Permission Denied!"),
-                ErrorKind::AlreadyExists => perror_exit("Directory already exists!"),
-                _ => panic!("Error Creating Directory! {}", e),
-            }
-        }
+    
+    for dir in dirs.iter() {
+        let path = chal_dir.join(dir);
+
+        fs::create_dir(&path)
+            .with_context(|| format!("Failed to create '{}' subdirectory", path.display()))?;
+        
+        info!("Subdirectory '{}' created!", path.display());
     }
 
+    
     for (i, file) in outside_files.iter().enumerate() { 
-        if i < 2 && !chal.docker {
-            continue
+        if i < 2 && !chal.docker { 
+            continue;
         }
-        match File::create(file) {
-            Ok(_) => {
-                if chal.verbose {
-                    print_info(format!("Created {}!", file));
-                }
-            }
-            Err(e) => match e.kind() {
-                ErrorKind::NotFound => perror_exit("Path not found!"),
-                ErrorKind::PermissionDenied => perror_exit("Permission Denied!"),
-                ErrorKind::AlreadyExists => perror_exit("File already Exists!"),
-                _ => panic!("Error creating file! {}", e),
-            }
-        }
+
+        let path = chal_dir.join(file);
+
+        File::create(&path)
+            .with_context(|| format!("Failed to create '{}'", path.display()))?;
+
+        info!("Created '{}'", path.display());
     }
 
-    if chal.docker {
+
+    if chal.docker { 
+       let path = chal_dir.join(outside_files[0]);
+       let mut f = OpenOptions::new()
+                    .write(true)
+                    .open(&path)
+                    .with_context(|| format!("Failed to create {}", path.display()))?;
+    
+        write!(
+            f,
+            "#!/usr/bin/bash\ndocker build -t {}/{} setup/",
+            chal.author, chal.name
+        )
+        .with_context(|| format!("Couldn't write to '{}'", path.display()))?;
+
+        info!("Created {}", path.display());
+
+        let path = chal_dir.join(outside_files[1]);
         let mut f = OpenOptions::new()
-            .write(true)
-            .open(outside_files[0])
-            .unwrap();
-        
-        write!(f, "#!/bin/bash\ndocker build -t {}/{} setup/", chal.author, chal.name).unwrap();
+                    .write(true)
+                    .open(&path)
+                    .with_context(|| format!("Failed to create {}", path.display()))?;
+    
+        write!(
+            f,
+            "#!/usr/bin/bash\ndocker run -p 69666:69666 -d {}/{}",
+            chal.author, chal.name
+        )
+        .with_context(|| format!("Couldn't write to '{}'", path.display()))?;
 
-        if chal.verbose { 
-            print_info("Created docker_build.sh !".to_string());
-        }
-
-        let mut f = OpenOptions::new()
-            .write(true)
-            .open(outside_files[1])
-            .unwrap();
-        
-        write!(f, "#!/bin/bash\ndocker run -p 69666:69666 -d {}/{}", chal.author, chal.name).unwrap();
-
-        if chal.verbose { 
-            print_info("Created docker_run.sh !".to_string());
-        }
+        info!("Created {}", path.display());
     }
-}
 
-
-
-fn perror_exit(msg: &str) {
-    println!("{}", msg.red().bold());
-    std::process::exit(-1);
-}
-
-fn print_info(msg: String) {
-    println!("{}", msg.green().bold());
+    info!("Outer files created successfully!");
+    Ok(())
 }
