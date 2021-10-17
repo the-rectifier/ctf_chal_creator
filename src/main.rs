@@ -155,25 +155,17 @@ fn create_outer(chal: &ChalConfig) -> Result<()> {
         info!("Subdirectory '{}' created!", path.display());
     }
 
-    
-    for (i, file) in outside_files.iter().enumerate() { 
-        if i < 2 && !chal.docker { 
-            continue;
-        }
-
-        let path = chal_dir.join(file);
-
-        File::create(&path)
-            .with_context(|| format!("Failed to create '{}'", path.display()))?;
-
-        info!("Created '{}'", path.display());
-    }
-
+    let path = chal_dir.join(readme);
+    File::create(&path)
+        .with_context(|| format!("Failed to create '{}'", path.display()))?;
+    info!("Created '{}'", path.display());
 
     if chal.docker { 
-       let path = chal_dir.join(outside_files[0]);
+       let path = chal_dir.join(docker_files[0]);
        let mut f = OpenOptions::new()
+                    .create(true)
                     .write(true)
+                    .mode(0o755)
                     .open(&path)
                     .with_context(|| format!("Failed to create {}", path.display()))?;
     
@@ -186,8 +178,10 @@ fn create_outer(chal: &ChalConfig) -> Result<()> {
 
         info!("Created {}", path.display());
 
-        let path = chal_dir.join(outside_files[1]);
+        let path = chal_dir.join(docker_files[1]);
         let mut f = OpenOptions::new()
+                    .create(true)
+                    .mode(0o755)
                     .write(true)
                     .open(&path)
                     .with_context(|| format!("Failed to create {}", path.display()))?;
