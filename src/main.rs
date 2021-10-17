@@ -136,7 +136,8 @@ fn create_inner(chal: &ChalConfig) -> Result<()> {
 
 fn create_outer(chal: &ChalConfig) -> Result<()> {
     let dirs: [&str; 3] = ["Setup", "Public", "Solution"];
-    let outside_files: [&str; 3] = ["docker_build.sh", "docker_run.sh", "Readme"];
+    let readme = "Readme";
+    let docker_files: [&str; 2] = ["docker_build.sh", "docker_run.sh"];
     let chal_dir = PathBuf::from(format!("{}/{}", chal.directory, chal.name));
 
     fs::create_dir(&chal_dir)
