@@ -178,7 +178,7 @@ fn create_outer(chal: &ChalConfig) -> Result<()> {
     
         write!(
             f,
-            "#!/usr/bin/bash\ndocker build -t {}/{} setup/",
+            "#!/usr/bin/bash\ndocker build -t {}/{} Setup/",
             chal.author, chal.name
         )
         .with_context(|| format!("Couldn't write to '{}'", path.display()))?;
