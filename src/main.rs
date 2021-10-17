@@ -1,11 +1,12 @@
-use anyhow::{ Context, Result };
+use clap::arg_enum;
 use log::{ error, info };
+use structopt::StructOpt;
+use std::path::{ PathBuf };
+use std::io::{ self, Write };
+use anyhow::{ Context, Result };
+use std::os::unix::fs::OpenOptionsExt;
 use std::fs::{ self, File, OpenOptions };
 use simplelog::{ ColorChoice, TermLogger, TerminalMode };
-use std::io::{ self, Write };
-use std::path::{ PathBuf };
-use structopt::StructOpt;
-use clap::arg_enum;
 
 
 arg_enum! {
@@ -60,11 +61,15 @@ struct Opts {
 
 
 fn main() -> Result<()> {
+    if cfg!(windows) {
+        println!("Prrrrr wInDoOoWs!!");
+        return Ok(());
+    }
     let opts = Opts::from_args();
 
     let chal = ChalConfig {
-        name: opts.name,
-        author: opts.author,
+        name: opts.name.to_ascii_lowercase(),
+        author: opts.author.to_ascii_lowercase(),
         chal_type: opts.chal_type,
         docker: opts.docker,
         verbose: opts.verbose,
